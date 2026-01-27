@@ -1,0 +1,46 @@
+[project]
+name = "gceutils"
+version = "1.0.0"
+description = "Python utilities for DRY tools, rich repr/validation helpers, object-tree iteration & more."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.12"
+license = { text = "GPL-3.0-or-later" }
+authors = [{name = "GermanCodeEngineer", email = "germancodeengineer@proton.me"}]
+
+# sometimes auto generated
+dependencies = []
+
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/GermanCodeEngineer/gceutils/"
+Repository = "https://github.com/GermanCodeEngineer/gceutils/"
+Issues = "https://github.com/GermanCodeEngineer/gceutils/issues/"
+
+# sometimes auto generated
+[project.optional-dependencies]
+dev = [
+    "Requests~=2.32",
+    "pytest~=9.0",
+    "tomlkit~=0.14",
+    "coverage~=7.13",
+    "pipreqs~=0.4",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gceutils*"]
+
+[tool.setuptools]
+include-package-data = true

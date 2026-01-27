@@ -1,0 +1,18 @@
+TODOs Sorted by Priorites
+
+Currently Working On: /
+
+Changelog since last Release: /
+
+High: /
+
+Medium:
+    - S: fix grepr multiline string issue
+        => also fix parent and subclass field order issue
+    - S: investigate custom type object variables(example: vector extension)
+
+Low:
+    - M: replace remaining io actions with wrappers (eg. file_exists instead of os.path.exists)
+    - S: move from os.path to pathlib
+
+Formatting: /
