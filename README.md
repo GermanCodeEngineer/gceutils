@@ -48,7 +48,7 @@ For the full, always-up-to-date list, see [features.md](features.md).
 
 Python 3.12+ is required.
 
-- From PyPI (if published):
+- From PyPI:
 
 ```bash
 pip install gceutils
