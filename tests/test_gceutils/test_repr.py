@@ -4,6 +4,7 @@ import pytest
 from gceutils.repr import grepr
 from gceutils.repr import KeyReprDict, GEnum
 from gceutils.repr import GreprRepresentationImplementation
+from gceutils.repr import RepresentationImplementation
 from gceutils.dual_key_dict import DualKeyDict
 from gceutils.base import grepr_dataclass, field
 
@@ -238,3 +239,89 @@ class TestGrepr:
         assert isinstance(result, str)
         assert ("items", 0) in probe.paths
         assert ("items", 1) in probe.paths
+
+    def test_base_representation_defaults_to_builtin_repr(self):
+        """Base implementation should not apply grepr-specific formatting."""
+        class Unknown:
+            pass
+
+        base = RepresentationImplementation()
+        unknown = Unknown()
+
+        assert base.recursively_format(unknown) == repr(unknown)
+        assert base.recursively_format([1, 2, 3]) == repr([1, 2, 3])
+
+    def test_base_special_case_return_contract(self):
+        """Base class should respect both str and (str, bool) special-case returns."""
+        class Special(RepresentationImplementation):
+            def implement_special_cases(self, obj, level, path=None):
+                if obj == "str-mode":
+                    return "SPECIAL"
+                if obj == "tuple-mode":
+                    return "SPECIAL_TUPLE", False
+                return NotImplemented
+
+        special = Special()
+        assert special.format_value("str-mode", 0) == ("SPECIAL", True)
+        assert special.format_value("tuple-mode", 0) == ("SPECIAL_TUPLE", False)
+        assert special.recursively_format("tuple-mode") == "SPECIAL_TUPLE"
+        assert special.recursively_format(10) == repr(10)
+
+    def test_special_case_bool_changes_collection_layout(self):
+        """When special-case marks values complex (False), collection should render multiline."""
+        class ComplexInts(GreprRepresentationImplementation):
+            def implement_special_cases(self, obj, level, path=None):
+                if isinstance(obj, int):
+                    return f"<{obj}>", False
+                return NotImplemented
+
+        formatter = ComplexInts(indent=2)
+        out = formatter.recursively_format([1, 2])
+
+        assert "\n" in out
+        assert "<1>" in out and "<2>" in out
+
+    def test_path_aware_hook_receives_dataclass_attribute_paths(self):
+        """Path-aware hook should include dataclass attribute segments."""
+        @grepr_dataclass()
+        class Child:
+            value: int
+
+        @grepr_dataclass()
+        class Root:
+            child: Child
+
+        class PathProbe(GreprRepresentationImplementation):
+            def __init__(self):
+                super().__init__()
+                self.paths = []
+
+            def implement_special_cases(self, obj, level, path=None):
+                if isinstance(obj, int):
+                    self.paths.append(tuple(item.value for item in path.path))
+                return NotImplemented
+
+        probe = PathProbe()
+        probe.recursively_format(Root(Child(7)))
+
+        assert ("child", "value") in probe.paths
+
+    def test_path_aware_hook_receives_dual_key_dict_branch_paths(self):
+        """Path-aware hook should include DualKeyDict branch tuple segment for values."""
+        dkd = DualKeyDict()
+        dkd.set("a", "b", 3)
+
+        class PathProbe(GreprRepresentationImplementation):
+            def __init__(self):
+                super().__init__()
+                self.paths = []
+
+            def implement_special_cases(self, obj, level, path=None):
+                if isinstance(obj, int):
+                    self.paths.append(tuple(item.value for item in path.path))
+                return NotImplemented
+
+        probe = PathProbe()
+        probe.recursively_format(dkd)
+
+        assert (("a", "b"),) in probe.paths

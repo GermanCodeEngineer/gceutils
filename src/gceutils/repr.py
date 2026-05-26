@@ -11,9 +11,6 @@ if TYPE_CHECKING:
     from gceutils.base import AbstractTreePath
 
 
-SpecialCaseResult = tuple[str, bool] | str | NotImplementedType
-
-
 class KeyReprDict(dict[Any, Any]):
     """Dict subclass that displays only its keys in repr, not values. Inherits all dict functionality."""
     
@@ -41,7 +38,7 @@ class RepresentationImplementation:
         obj: Any,
         level: int,
         path: AbstractTreePath | None = None,
-    ) -> SpecialCaseResult:
+    ) -> tuple[str, bool] | str | NotImplementedType:
         """Return NotImplemented when unmatched, else str or (str, is_simple)."""
         return NotImplemented
 
@@ -90,7 +87,7 @@ class GreprRepresentationImplementation(RepresentationImplementation):
         """Create the root path used for recursive formatting traversal."""
         from gceutils.base import AbstractTreePath
 
-        return AbstractTreePath(())
+        return AbstractTreePath()
 
     def extend_path_with_attribute(self, path: AbstractTreePath | None, attr: str) -> AbstractTreePath | None:
         """Extend a path with a dataclass-style attribute segment."""

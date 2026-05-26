@@ -1,6 +1,6 @@
 [project]
 name = "gceutils"
-version = "1.0.0"
+version = "1.1.0"
 description = "Python utilities for DRY tools, rich repr/validation helpers, object-tree iteration & more."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
@@ -27,9 +27,9 @@ Issues = "https://github.com/GermanCodeEngineer/gceutils/issues/"
 # sometimes auto generated
 [project.optional-dependencies]
 dev = [
-    "Requests~=2.32",
+    "Requests~=2.34",
     "pytest~=9.0",
-    "tomlkit~=0.14",
+    "tomlkit~=0.15",
     "coverage~=7.13",
     "pipreqs~=0.4",
 ]
