@@ -3,6 +3,7 @@ import pytest
 
 from gceutils.repr import grepr
 from gceutils.repr import KeyReprDict, GEnum
+from gceutils.repr import GreprRepresentationImplementation
 from gceutils.dual_key_dict import DualKeyDict
 from gceutils.base import grepr_dataclass, field
 
@@ -218,3 +219,22 @@ class TestGrepr:
             pass
         obj = Unknown()
         assert grepr(obj) == repr(obj)
+
+    def test_path_aware_special_case_hook_receives_nested_path(self):
+        """Path-aware hook should receive a concrete traversal path for nested values."""
+        class PathProbe(GreprRepresentationImplementation):
+            def __init__(self):
+                super().__init__()
+                self.paths = []
+
+            def implement_special_cases(self, obj, level, path=None):
+                if isinstance(obj, int):
+                    self.paths.append(tuple(item.value for item in path.path))
+                return NotImplemented
+
+        probe = PathProbe()
+        result = probe.recursively_format({"items": [1, 2]})
+
+        assert isinstance(result, str)
+        assert ("items", 0) in probe.paths
+        assert ("items", 1) in probe.paths
