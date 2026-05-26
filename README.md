@@ -31,7 +31,12 @@ The public API is kept intentionally small. Highlights:
 
 - `KeyReprDict`: Dict wrapper whose repr displays only keys
 - `grepr`: Flexible pretty-printer for dataclasses, collections, dicts, and `DualKeyDict`
+- `RepresentationImplementation`: Base architecture for recursive representations (defaults to standard `repr`)
+- `GreprRepresentationImplementation`: Built-in `grepr` style implementation with override hooks
 - `GEnum`: Enum base class with concise `Class.Member` repr
+
+- `GreprDataclassImplementation`: Class-based architecture behind `grepr_dataclass`
+- `grepr_dataclass(..., repr_implementation=...)`: Provide a custom representation implementation class
 
 - `TreeVisitor`: Recursive traversal over dataclass-based object trees with type filtering
 
@@ -120,6 +125,37 @@ from gceutils import read_all_files_of_zip, grepr
 contents = read_all_files_of_zip("archive.zip")  # {"path/inside.txt": b"..."}
 print(grepr(list(contents.keys()), indent=2))
 ```
+
+Customize representation behavior with implementation classes:
+
+```python
+from gceutils import (
+	RepresentationImplementation,
+	GreprRepresentationImplementation,
+	GreprDataclassImplementation,
+	grepr_dataclass,
+)
+
+
+class MyGrepr(GreprRepresentationImplementation):
+	# Optional: customize special-case formatting.
+	def implement_special_cases(self, obj, level, path=None):
+		if isinstance(obj, bytes):
+			return f"<bytes:{len(obj)}>"
+		return NotImplemented
+
+
+@grepr_dataclass(repr_implementation=MyGrepr)
+class Payload:
+	data: bytes
+
+
+print(repr(Payload(data=b"abc")))
+# Payload(data=<bytes:3>)
+```
+
+You can also use `GreprDataclassImplementation` directly if you want to extend how
+the decorator composes dataclass, repr, and validate behavior.
 
 ---
 

@@ -7,6 +7,9 @@ from typing      import (
     overload, get_type_hints, dataclass_transform, TYPE_CHECKING,
 )
 
+if TYPE_CHECKING:
+    from gceutils.repr import RepresentationImplementation
+
 
 VALIDATOR_FN = Callable | NoneType # TODO
 
@@ -75,102 +78,197 @@ def get_field_options(field: Field) -> dict[str, Any]:
     frozen_default = False,
     field_specifiers = (field,),
 )
+class GreprDataclassImplementation:
+    """Class-based implementation for grepr_dataclass decorator behavior."""
+
+    def __init__(self, /, *,
+            grepr: bool = True,
+            init: bool = True, eq: bool = True, order: bool = True,
+            unsafe_hash: bool = False, frozen: bool = False,
+            match_args: bool = True, kw_only: bool = False,
+            slots: bool = False, weakref_slot: bool = False,
+            forbid_init_only_subcls: bool = False,
+            validate: bool = True,
+            repr_implementation: type[RepresentationImplementation] | None = None,
+        ) -> None:
+        self.grepr = grepr
+        self.init = init
+        self.eq = eq
+        self.order = order
+        self.unsafe_hash = unsafe_hash
+        self.frozen = frozen
+        self.match_args = match_args
+        self.kw_only = kw_only
+        self.slots = slots
+        self.weakref_slot = weakref_slot
+        self.forbid_init_only_subcls = forbid_init_only_subcls
+        self.validate = validate
+        self.repr_implementation = repr_implementation
+
+        if self.init:
+            assert not self.forbid_init_only_subcls
+
+    def apply[T](self, cls: T) -> T:
+        cls = self.apply_dataclass(cls)
+        self.initialize_field_options(cls)
+        self.apply_forbid_init_only_subclasses(cls)
+        self.apply_repr(cls)
+        self.apply_validate(cls)
+        return cls
+
+    def apply_dataclass[T](self, cls: T) -> T:
+        return dataclass(
+            cls,
+            init=self.init, repr=False, eq=self.eq,
+            order=self.order, unsafe_hash=self.unsafe_hash, frozen=self.frozen,
+            match_args=self.match_args, kw_only=self.kw_only,
+            slots=self.slots, weakref_slot=self.weakref_slot,
+        )
+
+    def initialize_field_options(self, cls: type[Any]) -> None:
+        for _field in get_fields(cls):
+            update_field(_field)
+
+    def apply_forbid_init_only_subclasses(self, cls: type[Any]) -> None:
+        if not self.forbid_init_only_subcls:
+            return
+
+        def __init__(self, *args, **kwargs) -> None | NoReturn:
+            if type(self) is cls:
+                msg = f"Can not initialize parent class {cls!r} directly. Please use the subclasses"
+                suggested_subcls_names = [subcls.__name__ for subcls in cls.__subclasses__()]
+                if suggested_subcls_names:
+                    msg += " " + ", ".join(suggested_subcls_names)
+                msg += "."
+                raise NotImplementedError(msg)
+
+        cls.__init__ = __init__
+
+    def get_repr_implementation(self):
+        if self.repr_implementation is not None:
+            return self.repr_implementation
+        from gceutils.repr import GreprRepresentationImplementation
+
+        return GreprRepresentationImplementation
+
+    def make_repr_method(self):
+        decorator_impl = self
+
+        def grepr_wrapper(instance, *args, **kwargs) -> str:
+            implementation_type = decorator_impl.get_repr_implementation()
+            formatter = implementation_type(*args, **kwargs)
+            return formatter.recursively_format(instance)
+
+        return grepr_wrapper
+
+    def apply_repr(self, cls: type[Any]) -> None:
+        if not self.grepr:
+            return
+        cls.__repr__ = self.make_repr_method()
+        cls.__has_grepr__ = True
+
+    def ensure_validate_path(self, path: AbstractTreePath | None) -> AbstractTreePath:
+        if path is None:
+            return AbstractTreePath(start_with_dot=True)
+        return path
+
+    def validate_typed_fields(self, instance: Any, path: AbstractTreePath, type_hints: dict[str, Any]) -> None:
+        from gceutils.decorators import enforce_type
+
+        for _field in get_fields(instance):
+            options = get_field_options(_field)
+            if not options["validate_type"]:
+                continue
+            expected_type = type_hints.get(_field.name, _field.type)
+            if hasattr(instance, _field.name):
+                enforce_type(
+                    value=getattr(instance, _field.name),
+                    expected=expected_type,
+                    path=path.add_attribute(_field.name),
+                    notset_as_special=False,
+                )
+            elif options["validate_require_exist"]:
+                enforce_type(
+                    value=NotSet,
+                    expected=expected_type,
+                    path=path.add_attribute(_field.name),
+                    notset_as_special=True,
+                )
+
+    def validate_subfields(self, instance: Any, path: AbstractTreePath, *args, **kwargs) -> None:
+        for _field in get_fields(instance):
+            options = get_field_options(_field)
+            if not options["call_subvalidate"]:
+                continue
+            field_value = getattr(instance, _field.name, None)
+            if callable(getattr(field_value, "validate", None)):
+                field_value.validate(path.add_attribute(_field.name), *args, **kwargs)
+
+    def run_post_validate(self, instance: Any, path: AbstractTreePath, *args, **kwargs) -> None:
+        if callable(getattr(instance, "post_validate", None)):
+            instance.post_validate(path, *args, **kwargs)
+
+    def make_validate_method(self):
+        decorator_impl = self
+
+        def validate_method(instance, path: AbstractTreePath | None = None, *args, **kwargs) -> None:
+            resolved_path = decorator_impl.ensure_validate_path(path)
+            type_hints = get_type_hints(type(instance))
+            decorator_impl.validate_typed_fields(instance, resolved_path, type_hints)
+            decorator_impl.validate_subfields(instance, resolved_path, *args, **kwargs)
+            decorator_impl.run_post_validate(instance, resolved_path, *args, **kwargs)
+
+        return validate_method
+
+    def apply_validate(self, cls: type[Any]) -> None:
+        if not self.validate:
+            return
+
+        cls.validate = self.make_validate_method()
+        cls.__has_validate__ = True
+
+        if hasattr(cls, "__abstractmethods__"):
+            abstractmethods = set(cls.__abstractmethods__)
+            abstractmethods.discard('validate')
+            cls.__abstractmethods__ = frozenset(abstractmethods)
+
+
 def grepr_dataclass(*, grepr: bool = True,
-        init: bool = True, eq: bool = True, order: bool = True, 
-        unsafe_hash: bool = False, frozen: bool = False, 
-        match_args: bool = True, kw_only: bool = False, 
+        init: bool = True, eq: bool = True, order: bool = True,
+        unsafe_hash: bool = False, frozen: bool = False,
+        match_args: bool = True, kw_only: bool = False,
         slots: bool = False, weakref_slot: bool = False,
         forbid_init_only_subcls: bool = False,
         validate: bool = True,
+        repr_implementation: type[RepresentationImplementation] | None = None,
     ):
     """
-    A decorator which combines @dataclass and a good representation system.
+    A decorator which combines @dataclass and a representation/validation system.
     Args:
         init...: dataclass parameters (except for order which is True by default here)
-        forbid_init_only_subcls: add a __init__ method to raises a NotImplementedError, which tells the user to use it"s subclasses.
+        forbid_init_only_subcls: add a __init__ method to raise NotImplementedError on direct parent initialization.
         validate: add a validate method which ensures instance field values match type annotations and validation configuration.
+        repr_implementation: optional formatter class used by generated __repr__. Must provide recursively_format(obj) -> str.
     """
-    if init: assert not forbid_init_only_subcls
+    implementation = GreprDataclassImplementation(
+        grepr=grepr,
+        init=init,
+        eq=eq,
+        order=order,
+        unsafe_hash=unsafe_hash,
+        frozen=frozen,
+        match_args=match_args,
+        kw_only=kw_only,
+        slots=slots,
+        weakref_slot=weakref_slot,
+        forbid_init_only_subcls=forbid_init_only_subcls,
+        validate=validate,
+        repr_implementation=repr_implementation,
+    )
 
     def decorator[T](cls: T) -> T:
-        cls = dataclass(cls, 
-            init=init, repr=False, eq=eq,
-            order=order, unsafe_hash=unsafe_hash, frozen=frozen,
-            match_args=match_args, kw_only=kw_only,
-            slots=slots, weakref_slot=weakref_slot,
-        )
-        for field in get_fields(cls):
-            update_field(field)
+        return implementation.apply(cls)
 
-        if forbid_init_only_subcls:
-            def __init__(self, *args, **kwargs) -> None | NoReturn:
-                if type(self) is cls:
-                    msg = f"Can not initialize parent class {cls!r} directly. Please use the subclasses"
-                    suggested_subcls_names = [cls.__name__ for cls in cls.__subclasses__()]
-                    if suggested_subcls_names:
-                        msg += " "
-                        msg += ", ".join(suggested_subcls_names)
-                    msg += "."
-                    raise NotImplementedError(msg)
-            cls.__init__ = __init__
-        
-        if grepr:
-            def grepr_wrapper(self, *args, **kwargs) -> str:
-                from gceutils.repr import grepr
-                return grepr(self, *args, **kwargs)
-            cls.__repr__ = grepr_wrapper
-            cls.__has_grepr__ = True
-        
-        if validate:
-            def validate_method(self, path: AbstractTreePath | None = None, *args, **kwargs) -> None:
-                from gceutils.decorators import enforce_type
-                if path is None:
-                    path = AbstractTreePath(start_with_dot=True)
-
-                # Get type hints to resolve string annotations
-                type_hints = get_type_hints(type(self))
-                
-                for field in get_fields(self):
-                    options = get_field_options(field)
-                    if not options["validate_type"]:
-                        continue
-                    # Use type hints instead of field.type to handle string annotations
-                    expected_type = type_hints.get(field.name, field.type)
-                    if hasattr(self, field.name):
-                        enforce_type(
-                            value=getattr(self, field.name),
-                            expected=expected_type,
-                            path=path.add_attribute(field.name),
-                            notset_as_special=False,
-                        )
-                    elif options["validate_require_exist"]:
-                        enforce_type(
-                            value=NotSet,
-                            expected=expected_type,
-                            path=path.add_attribute(field.name),
-                            notset_as_special=True,
-                        )
-                
-                for field in get_fields(self):
-                    options = get_field_options(field)
-                    if not options["call_subvalidate"]:
-                        continue
-                    field_value = getattr(self, field.name, None)
-                    if callable(getattr(field_value, "validate", None)):
-                        field_value.validate(path.add_attribute(field.name), *args, **kwargs)
-                
-                if callable(getattr(self, "post_validate", None)):
-                    self.post_validate(path, *args, **kwargs)
-            cls.validate = validate_method
-            cls.__has_validate__ = True
-            
-            # Remove "validate" from abstract methods if present (for ABC compatibility)
-            if hasattr(cls, "__abstractmethods__"):
-                abstractmethods = set(cls.__abstractmethods__)
-                abstractmethods.discard('validate')
-                cls.__abstractmethods__ = frozenset(abstractmethods)
-        
-        return cls
     return decorator
 
 class HasGreprValidate(Protocol):
@@ -395,7 +493,7 @@ class AbstractTreePath(HasGreprValidate):
 
 
 __all__ = [
-    "field", "update_field", "grepr_dataclass", "HasGreprValidate",
+    "field", "update_field", "GreprDataclassImplementation", "grepr_dataclass", "HasGreprValidate",
     "ATPathAttribute", "ATPathIndexOrKey", "AbstractTreePath",
     "NotSetType", "NotSet",
 ]

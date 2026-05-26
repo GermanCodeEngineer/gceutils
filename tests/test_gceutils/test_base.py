@@ -2,6 +2,7 @@ from __future__ import annotations
 import pytest
 from typing import Any
 from gceutils.base import AbstractTreePath, grepr_dataclass, field
+from gceutils.repr import RepresentationImplementation
 
 
 class TestAbstractTreePath:
@@ -229,6 +230,34 @@ class TestGreprDataclass:
         nested = NestedClass(value=42)
         parent = ParentClass(nested=nested)
         parent.validate()  # Should call nested.validate()
+
+    def test_grepr_dataclass_with_custom_repr_implementation(self):
+        """Custom repr implementation should be used when provided."""
+        class CustomRepr(RepresentationImplementation):
+            def recursively_format(self, obj: Any) -> str:
+                return f"CUSTOM<{obj.__class__.__name__}>"
+
+        @grepr_dataclass(repr_implementation=CustomRepr)
+        class TestClass:
+            value: int
+
+        obj = TestClass(value=5)
+        assert repr(obj) == "CUSTOM<TestClass>"
+
+    def test_custom_repr_implementation_receives_repr_kwargs(self):
+        """repr kwargs should be forwarded to custom repr implementation constructor."""
+        class CapturingRepr(RepresentationImplementation):
+            def recursively_format(self, obj: Any) -> str:
+                return f"L={self.level_offset};I={self.indent!r}"
+
+        @grepr_dataclass(repr_implementation=CapturingRepr)
+        class TestClass:
+            value: int
+
+        obj = TestClass(value=1)
+        out = obj.__repr__(level_offset=3, indent="..")
+
+        assert out == "L=3;I='..'"
 
 
 class TestField:
